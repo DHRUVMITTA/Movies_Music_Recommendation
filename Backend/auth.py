@@ -6,6 +6,8 @@ from flask_jwt_extended import (
     get_jwt,
     current_user,
     get_jwt_identity,
+    set_access_cookies,
+    set_refresh_cookies
 )
 from models import User, TokenBlocklist
 
@@ -20,17 +22,19 @@ def register_user():
     new_user = User(username=data.get("username"), email=data.get("email"))
     new_user.set_password(password=data.get("password"))
     new_user.save()
-    
-    # Automatically log the user in after registration
+
     access_token = create_access_token(identity=new_user.username)
     refresh_token = create_refresh_token(identity=new_user.username)
-    return jsonify({
+
+    response = jsonify({
         "message": "User created and logged in",
-        "tokens": {
-            "access": access_token,
-            "refresh": refresh_token
-        }
-    }), 201
+        "access_token": access_token,
+        "refresh_token": refresh_token
+    })
+    set_access_cookies(response, access_token)
+    set_refresh_cookies(response, refresh_token)
+
+    return response, 201
 
 @auth_bp.post("/login")
 def login_user():
@@ -39,13 +43,16 @@ def login_user():
     if user and user.check_password(password=data.get("password")):
         access_token = create_access_token(identity=user.username)
         refresh_token = create_refresh_token(identity=user.username)
-        return jsonify({
+        
+        response = jsonify({
             "message": "Logged In",
-            "tokens": {
-                "access": access_token,
-                "refresh": refresh_token
-            }
-        }), 200
+            "access_token": access_token,
+            "refresh_token": refresh_token
+        })
+        set_access_cookies(response, access_token)
+        set_refresh_cookies(response, refresh_token)
+        
+        return response, 200
     return jsonify({"error": "Invalid username or password"}), 400
 
 @auth_bp.get("/whoami")
@@ -59,12 +66,18 @@ def whoami():
         }
     })
 
-@auth_bp.get("/refresh")
+@auth_bp.post("/refresh")
 @jwt_required(refresh=True)
 def refresh_access():
     identity = get_jwt_identity()
     new_access_token = create_access_token(identity=identity)
-    return jsonify({"access_token": new_access_token})
+
+    response = jsonify({
+        "access_token": new_access_token
+    })
+    set_access_cookies(response, new_access_token)
+
+    return response
 
 @auth_bp.get("/logout")
 @jwt_required(verify_type=False)
